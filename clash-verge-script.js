@@ -29,6 +29,47 @@ function replaceProxyReference(group, fromName, toName) {
   });
 }
 
+function collectProxyNames(proxies) {
+  var proxyNames = [];
+  var seen = Object.create(null);
+
+  if (!Array.isArray(proxies)) {
+    return proxyNames;
+  }
+
+  proxies.forEach(function (proxy) {
+    var name = proxy && typeof proxy.name === "string" ? proxy.name : "";
+    if (!name || seen[name]) {
+      return;
+    }
+
+    seen[name] = true;
+    proxyNames.push(name);
+  });
+
+  return proxyNames;
+}
+
+function collectPreferredProxyNames(preferredNames, availableNameMap) {
+  var proxyNames = [];
+  var seen = Object.create(null);
+
+  if (!Array.isArray(preferredNames)) {
+    return proxyNames;
+  }
+
+  preferredNames.forEach(function (name) {
+    if (typeof name !== "string" || !availableNameMap[name] || seen[name]) {
+      return;
+    }
+
+    seen[name] = true;
+    proxyNames.push(name);
+  });
+
+  return proxyNames;
+}
+
 function createAutoProxyGroup(proxyNames) {
   return {
     name: AUTO_GROUP_NAME,
@@ -71,6 +112,7 @@ function main(config) {
   }
 
   var removedNames = Object.create(null);
+  var availableProxyNames = [];
 
   if (Array.isArray(config.proxies)) {
     config.proxies = config.proxies.filter(function (proxy) {
@@ -81,6 +123,8 @@ function main(config) {
       }
       return true;
     });
+
+    availableProxyNames = collectProxyNames(config.proxies);
   }
 
   var proxyGroups = config["proxy-groups"];
@@ -93,7 +137,7 @@ function main(config) {
   });
 
   var manualGroup = findPreferredManualGroup(proxyGroups);
-  if (!manualGroup || !Array.isArray(manualGroup.proxies) || manualGroup.proxies.length === 0) {
+  if (!manualGroup) {
     return config;
   }
 
@@ -101,7 +145,21 @@ function main(config) {
     return !(group && group.name === AUTO_GROUP_NAME);
   });
 
-  var autoGroup = createAutoProxyGroup(manualGroup.proxies);
+  var availableNameMap = Object.create(null);
+  availableProxyNames.forEach(function (name) {
+    availableNameMap[name] = true;
+  });
+
+  var autoProxyNames = collectPreferredProxyNames(manualGroup.proxies, availableNameMap);
+  if (autoProxyNames.length === 0) {
+    autoProxyNames = availableProxyNames.slice();
+  }
+
+  if (autoProxyNames.length === 0) {
+    return config;
+  }
+
+  var autoGroup = createAutoProxyGroup(autoProxyNames);
   proxyGroups.splice(proxyGroups.indexOf(manualGroup) + 1, 0, autoGroup);
 
   proxyGroups.forEach(function (group) {
